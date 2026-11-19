@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Credit Card Default Prediction</title>
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js"></script>
+</head>
+<body>
+  <h1>Credit Card Default Prediction</h1>
+  <p>Tuned Random Forest — Module 10.5 deployment demo.</p>
+  <p>Choose a synthetic client profile and run the trained model.</p>
+  <label for="profile">Example profile:</label>
+  <select id="profile">
+    <option value="0">Example A — no payment delays</option>
+    <option value="1">Example B — repeated payment delays</option>
+  </select>
+  <button id="predict" disabled>Predict</button>
+  <p id="status" role="status">Loading model...</p>
+  <pre id="result" aria-live="polite"></pre>
+  <p>Educational demonstration only. Model scores are not calibrated lending-risk estimates.</p>
+  <script>
+    const status = document.getElementById('status');
+    const result = document.getElementById('result');
+    const button = document.getElementById('predict');
+    const profile = document.getElementById('profile');
+
+    // Each row follows the 23-feature order in model_metadata.json:
+    // Client details (5), repayment status (6), bills (6), payments (6).
+    const samples = [
+      [200000, 1, 2, 2, 30,
+       0, 0, 0, 0, 0, 0,
+       10000, 11000, 12000, 13000, 14000, 15000,
+       5000, 5000, 5000, 5000, 5000, 5000],
+      [50000, 2, 2, 1, 35,
+       2, 2, 2, 2, 2, 2,
+       45000, 44000, 43000, 42000, 41000, 40000,
+       0, 0, 0, 0, 0, 0]
+    ];
+    let session;
+    async function loadModel() {
+      try {
+        ort.env.wasm.numThreads = 1;
+        ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/';
+        session = await ort.InferenceSession.create('./model.onnx', {
+          executionProviders: ['wasm']
+        });
+        status.textContent = 'Model loaded successfully.';
+        button.disabled = false;
+      } catch (error) {
+        status.textContent = 'Model loading failed: ' + error.message;
+      }
+    }
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      result.textContent = '';
+      try {
+        const values = samples[Number(profile.value)];
+        const tensor = new ort.Tensor('float32', Float32Array.from(values), [1, 23]);
+        const outputs = await session.run({ [session.inputNames[0]]: tensor });
+        const label = Number(outputs[session.outputNames[0]].data[0]);
+        const probabilities = outputs[session.outputNames[1]].data;
+        result.textContent = `Prediction: ${label === 1 ? 'Default' : 'Non-default'} (class ${label})\n` +
+          `Non-default score: ${(probabilities[0] * 100).toFixed(2)}%\n` +
+          `Default score: ${(probabilities[1] * 100).toFixed(2)}%`;
+        status.textContent = 'Prediction completed.';
+      } catch (error) {
+        status.textContent = 'Prediction failed: ' + error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+    loadModel();
+  </script>
+</body>
+</html>
